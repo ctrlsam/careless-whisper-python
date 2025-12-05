@@ -220,3 +220,6 @@ __marimo__/
 
 # Exports
 exports/
+
+# vscode
+.vscode/
