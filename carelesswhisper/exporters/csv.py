@@ -13,7 +13,7 @@ class CSVExporter(BaseExporter):
     def __post_init__(self):
         pathlib.Path(self.save_directory).mkdir(parents=True, exist_ok=True)
 
-    def save_receipt_report(self, receipt_report: BaseReceiptReport) -> None:
+    def save_rtt(self, receipt_report: BaseReceiptReport) -> None:
         with open(self.file_path, "a") as f:
             f.write(f"{receipt_report.sent_at},{receipt_report.delay}\n")
 

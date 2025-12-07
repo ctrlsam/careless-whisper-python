@@ -9,7 +9,7 @@ class BaseExporter(ABC):
     target_phone_number: str
 
     @abstractmethod
-    def save_receipt_report(self, receipt_report: BaseReceiptReport) -> None:
+    def save_rtt(self, receipt_report: BaseReceiptReport) -> None:
         """
         Saves the read receipt delay for the target phone number.
         """
