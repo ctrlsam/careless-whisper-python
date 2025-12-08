@@ -1,19 +1,19 @@
 from argparse import ArgumentParser, BooleanOptionalAction
 
 parser = ArgumentParser(
-    description="Careless Whisper - Read receipt timing exploit analyzer"
+    description="Careless Whisper - Delivery receipt timing exploit analyzer"
 )
 parser.add_argument(
     "--provider", type=str, help="Messenger provider to use", default="whatsapp"
 )
 parser.add_argument(
-    "--phone-number", "-p", type=str, help="Phone number to test read receipt delay"
+    "--phone-number", "-p", type=str, help="Phone number to test delivery receipt delay"
 )
 parser.add_argument(
     "--exporter",
     "-e",
     type=str,
-    help="Exporter to save read receipt delays",
+    help="Exporter to save delivery receipt delays",
     default="csv",
 )
 parser.add_argument(

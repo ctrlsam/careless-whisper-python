@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     phone_number: str = Field(
         ...,
-        description="Target phone number to test read receipt delay.",
+        description="Target phone number to test delivery receipt delay.",
         alias="phone-number",
     )
 
@@ -33,11 +33,11 @@ class Settings(BaseSettings):
         default=False, description="Ignore warning for unregistered phone numbers."
     )
     delay_between_requests: float = Field(
-        default=1.0, description="Delay between each read receipt request in seconds."
+        default=1.0, description="Delay between each delivery receipt request in seconds."
     )
     concurrent_requests: int = Field(
         default=5,
-        description="Number of concurrent read receipt requests.",
+        description="Number of concurrent delivery receipt requests.",
         alias="concurrent",
     )
 

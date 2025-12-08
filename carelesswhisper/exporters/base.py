@@ -11,6 +11,6 @@ class BaseExporter(ABC):
     @abstractmethod
     def save_rtt(self, receipt_report: BaseReceiptReport) -> None:
         """
-        Saves the read receipt delay for the target phone number.
+        Saves the read delivery delay for the target phone number.
         """
         raise NotImplementedError("Subclasses must implement this method")

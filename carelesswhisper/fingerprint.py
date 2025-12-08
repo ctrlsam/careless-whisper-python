@@ -149,7 +149,7 @@ class Fingerprint:
     4. Receipt Structure (Section V-D, Table V)
        - Deterministic mapping: iOS vs Android vs Web vs Desktop
        - Delivery receipt handling: Separate (phone OS) vs Stacked (companions)
-       - Read receipt handling: Platform-specific patterns
+       - Delivery receipt handling: Platform-specific patterns
        - Receipt ordering: Natural, Reversed, or Random by platform
 
     5. Companion Device Detection (Section V-E, Figure 8)

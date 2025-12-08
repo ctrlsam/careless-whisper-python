@@ -264,7 +264,7 @@ class CLIDisplay:
         layout["header"].update(
             Panel(
                 Text(
-                    "Careless Whisper - Read Receipt Timing Analysis",
+                    "Careless Whisper - Delivery Receipt Timing Analysis",
                     justify="center",
                     style="bold magenta",
                 ),

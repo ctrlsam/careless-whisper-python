@@ -69,7 +69,7 @@ options:
 
 ## Grafana Dashboard
 
-A Grafana dashboard is available for visualizing the read receipt delays.
+A Grafana dashboard is available for visualizing the delivery receipt delays.
 To access the dashboard locally, run:
 
 ```sh

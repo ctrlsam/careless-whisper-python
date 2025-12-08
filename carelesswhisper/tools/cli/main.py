@@ -128,7 +128,7 @@ async def fingerprint_command(args):
 def main():
     """Main entry point for the CLI."""
     parser = ArgumentParser(
-        description="Careless Whisper - Read Receipt Timing Analysis CLI",
+        description="Careless Whisper - Delivery Receipt Timing Analysis CLI",
         prog="carelesswhisper",
     )
 

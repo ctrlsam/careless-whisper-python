@@ -1,1 +1,1 @@
-"""Careless Whisper - Read receipt timing exploit analyzer"""
+"""Careless Whisper - Delivery receipt timing exploit analyzer"""
