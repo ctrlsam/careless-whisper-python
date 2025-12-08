@@ -23,19 +23,39 @@ The exploit abuses delivery receipts in end-to-end encrypted messaging applicati
     pip install .
     ```
 
-## Tools
+## Running the CLI Tool
 
-- [Fingerprint Tool](./carelesswhisper/tools/fingerprint/README.md)): Analyzing delivery receipt timings to infer user activity.
-- [DoS Tool](./carelesswhisper/tools/dos/README.md)): Demonstrating the denial-of-service attack by draining device resources.
-- [CLI Tool](./carelesswhisper/tools/cli/README.md)): A command-line interface for interacting with the exploit functionalities.
+The CLI tool allows you to interactively run the careless whisper exploit against a target phone number.
 
-### CLI
+<img src="docs/cli_tool.png" alt="CLI Tool" width="800"/>
 
-To use the CLI tool, run the following command:
+
+
+#### Fingerprint Command
+
+To run the fingerprinting analysis with an interactive UI, use the following command:
 
 ```sh
-python -m carelesswhisper.tools.cli
-```
+$ python -m carelesswhisper.tools.cli.main fingerprint --help                                                                                                                                                                                          2 ✘  3.
+usage: carelesswhisper fingerprint [-h] --phone-number PHONE_NUMBER [--provider PROVIDER] [--delay DELAY] [--concurrent CONCURRENT] [--exporter EXPORTER] [--metrics] [--metrics-port METRICS_PORT] [--ignore-unregistered]
+
+options:
+  -h, --help            show this help message and exit
+  --phone-number PHONE_NUMBER, -p PHONE_NUMBER
+                        Target phone number for fingerprinting
+  --provider PROVIDER   Messenger provider to use (default: whatsapp)
+  --delay DELAY         Delay between requests in seconds (default: 1.0)
+  --concurrent CONCURRENT
+                        Number of concurrent requests (default: 5)
+  --exporter EXPORTER   Exporter to use for saving results (e.g., csv)
+  --metrics             Enable Prometheus metrics server
+  --metrics-port METRICS_PORT
+                        Port for the Prometheus metrics server (default: 8000)
+  --ignore-unregistered
+                        Ignore warning for unregistered phone numbers
+``` 
+
+
 
 ## Supported Messengers
 
