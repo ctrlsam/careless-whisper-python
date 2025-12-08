@@ -23,37 +23,18 @@ The exploit abuses delivery receipts in end-to-end encrypted messaging applicati
     pip install .
     ```
 
-## Usage
+## Tools
 
-Run the main script with the desired messenger provider and phone number:
+- [Fingerprint Tool](./carelesswhisper/tools/fingerprint/README.md)): Analyzing delivery receipt timings to infer user activity.
+- [DoS Tool](./carelesswhisper/tools/dos/README.md)): Demonstrating the denial-of-service attack by draining device resources.
+- [CLI Tool](./carelesswhisper/tools/cli/README.md)): A command-line interface for interacting with the exploit functionalities.
 
-```sh
-python3 -m carelesswhisper.main --help
-usage: main.py [-h] [--provider PROVIDER] [--phone-number PHONE_NUMBER] [--exporter EXPORTER]
+### CLI
 
-Careless Whisper - Read receipt timing exploit analyzer
-
-options:
-  -h, --help            show this help message and exit
-  --provider PROVIDER   Messenger provider to use
-  --phone-number PHONE_NUMBER, -p PHONE_NUMBER
-                        Phone number to test read receipt delay
-  --exporter EXPORTER, -e EXPORTER
-                        Exporter to save read receipt delays
-```
-
-### Examples
-
-#### Test read receipt delay on WhatsApp for a specific phone number and export results to CSV:
+To use the CLI tool, run the following command:
 
 ```sh
-python3 -m carelesswhisper.main --provider whatsapp --phone-number +1234567890 --exporter csv
-```
-
-#### Export read receipt delays to Prometheus (required for Grafana visualization):
-
-```sh
-python3 -m carelesswhisper.main --provider whatsapp --phone-number +1234567890 --exporter prometheus
+python -m carelesswhisper.tools.cli
 ```
 
 ## Supported Messengers
