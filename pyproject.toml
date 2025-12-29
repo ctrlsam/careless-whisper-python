@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "careless-whisper"
+version = "0.1.0"
+description = "A read receipt exploit that takes advantage of timing in end-to-end encrypted messaging applications to infer information about recipient activity"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "LICENSE"}
+authors = [
+    {name = "ctrlsam"}
+]
+
+dependencies = [
+    "neonize",
+    "pydantic-settings",
+    "prometheus-client",
+    "uniplot", # might want to move to optional for cli
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[project.urls]
+Homepage = "https://github.com/ctrlsam/careless-whisper-python"
