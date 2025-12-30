@@ -14,17 +14,6 @@ from neonize.aioze.client import NewAClient
 logger = logging.getLogger(__name__)
 
 
-def get_neonize_event_loop_runner():
-    """
-    Returns neonize's event loop runner.
-
-    Neonize manages its own event loop via NewAClient.
-    This function provides access to that loop without needing to instantiate the messenger.
-    """
-    client = NewAClient("careless-whisper.db")
-    return lambda coro: client.loop.run_until_complete(coro)
-
-
 class WhatsAppMessenger(BaseMessenger):
     def __init__(self, on_delivered: Callable[[str], Coroutine[Any, Any, None]]):
         super().__init__(on_delivered=on_delivered)
@@ -34,7 +23,7 @@ class WhatsAppMessenger(BaseMessenger):
         self.message_send_times: dict[str, datetime] = {}  # Map message ID to send time
         self.delivery_times: dict[str, datetime] = {}  # Map message ID to delivery time
         self.connected = asyncio.Event()  # Event to signal when connected
-        self._neonize_thread: threading.Thread | None = None
+        self._thread: threading.Thread | None = None
         self._setup_complete = False
 
     async def is_on_platform(self, phone_number: str) -> bool:
@@ -46,8 +35,8 @@ class WhatsAppMessenger(BaseMessenger):
         # Get the current event loop for cross-thread communication
         loop = asyncio.get_event_loop()
 
-        # Define the startup function that will run in the neonize event loop
-        def run_neonize():
+        # Define the startup function that will run in the event loop
+        def run_loop():
             @self.client.event(ConnectedEv)
             async def on_connected(_: NewAClient, event: ConnectedEv):
                 logger.info("WhatsApp client connected successfully")
@@ -70,8 +59,8 @@ class WhatsAppMessenger(BaseMessenger):
             self.client.loop.run_until_complete(self.client.idle())
 
         # Run neonize in a separate thread so it doesn't block asyncio
-        self._neonize_thread = threading.Thread(target=run_neonize, daemon=True)
-        self._neonize_thread.start()
+        self._thread = threading.Thread(target=run_loop, daemon=True)
+        self._thread.start()
 
         logger.info("Neonize thread started")
 
