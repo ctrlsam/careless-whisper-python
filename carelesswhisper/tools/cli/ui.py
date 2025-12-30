@@ -72,10 +72,22 @@ class RTTPlotter:
             except Exception as e:
                 return f"Error rendering plot: {e}"
 
+    def _calculate_moving_average(self, y: list[float], window: int = 3) -> list[float]:
+        """Calculates moving average of y values."""
+        if len(y) < window:
+            return y
+        
+        moving_avg = []
+        for i in range(len(y)):
+            start = max(0, i - window // 2)
+            end = min(len(y), i + window // 2 + 1)
+            moving_avg.append(sum(y[start:end]) / (end - start))
+        return moving_avg
+
     def _create_ascii_plot(
         self, x: list[float], y: list[float], width: int, height: int
     ) -> str:
-        """Creates a simple ASCII plot with axis labels."""
+        """Creates a simple ASCII plot with axis labels and moving average line."""
         if not y:
             return "No data to plot"
 
@@ -99,6 +111,9 @@ class RTTPlotter:
         # Create plot area
         plot = [[" " for _ in range(plot_width)] for _ in range(plot_height)]
 
+        # Calculate moving average
+        moving_avg = self._calculate_moving_average(y, window=3)
+
         # Plot points
         for xi, yi in zip(x, y):
             # Normalize to plot area
@@ -117,6 +132,44 @@ class RTTPlotter:
             y_pos = plot_height - 1 - y_pos
 
             plot[y_pos][x_pos] = "●"
+
+        # Plot moving average line with interpolation
+        moving_avg_positions = []
+        for xi, avg_yi in zip(x, moving_avg):
+            # Normalize to plot area
+            x_pos = (
+                int(((xi - min_x) / x_range) * (plot_width - 1)) if x_range > 0 else 0
+            )
+            y_pos = (
+                int(((avg_yi - min_y) / y_range) * (plot_height - 1)) if y_range > 0 else 0
+            )
+
+            # Clamp to bounds
+            x_pos = max(0, min(plot_width - 1, x_pos))
+            y_pos = max(0, min(plot_height - 1, y_pos))
+
+            # Invert y (top is high value)
+            y_pos = plot_height - 1 - y_pos
+            moving_avg_positions.append((x_pos, y_pos))
+
+        # Draw lines between consecutive moving average points
+        for i in range(len(moving_avg_positions) - 1):
+            x1, y1 = moving_avg_positions[i]
+            x2, y2 = moving_avg_positions[i + 1]
+            
+            # Bresenham-like line drawing
+            steps = max(abs(x2 - x1), abs(y2 - y1))
+            if steps == 0:
+                continue
+                
+            for step in range(steps + 1):
+                t = step / steps
+                cx = int(x1 + t * (x2 - x1))
+                cy = int(y1 + t * (y2 - y1))
+                
+                # Only draw if not already occupied by a point
+                if plot[cy][cx] == " ":
+                    plot[cy][cx] = "─"
 
         # Build output string
         lines = []
@@ -145,6 +198,9 @@ class RTTPlotter:
         x_label_str = f"{'Time (s)':>10}{min_x:.1f}{' ' * (plot_width - 10)}{max_x:.1f}"
         lines.append(x_label_str)
         lines.append(f"{'RTT (ms)':>10}")
+        
+        # Add legend
+        lines.append(" " * 10 + "● = Data Point | ─ = Moving Average (3-pt)")
 
         return "\n".join(lines)
 
