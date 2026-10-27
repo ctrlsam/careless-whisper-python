@@ -17,6 +17,7 @@ dependencies = [
     "neonize",
     "pydantic-settings",
     "prometheus-client",
+    "rich",
     "uniplot", # might want to move to optional for cli
 ]
 
