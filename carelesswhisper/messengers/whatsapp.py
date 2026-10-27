@@ -53,10 +53,17 @@ class WhatsAppMessenger(BaseMessenger):
                 "📱 Check your terminal for the QR code, scan it with WhatsApp on your phone"
             )
 
-            # Connect and start event processing
-            # idle() is necessary to keep receiving events from the backend
-            self.client.loop.run_until_complete(self.client.connect())
-            self.client.loop.run_until_complete(self.client.idle())
+            # Connect and start event processing.
+            # neonize's connect() calls asyncio.get_running_loop() internally and
+            # only populates client.loop once connected, so we need a running loop
+            # in this thread. idle() keeps receiving events from the backend.
+            async def _connect_and_idle():
+                await self.client.connect()
+                await self.client.idle()
+
+            client_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(client_loop)
+            client_loop.run_until_complete(_connect_and_idle())
 
         # Run neonize in a separate thread so it doesn't block asyncio
         self._thread = threading.Thread(target=run_loop, daemon=True)

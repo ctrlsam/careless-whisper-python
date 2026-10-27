@@ -17,7 +17,17 @@ The exploit abuses delivery receipts in end-to-end encrypted messaging applicati
     cd careless-whisper-python
     ```
 
-2. Install the required dependencies:
+2. Install the system libraries required by `neonize` (WhatsApp backend):
+
+    ```sh
+    # macOS (Homebrew)
+    brew install libmagic ffmpeg
+
+    # Debian / Ubuntu
+    sudo apt-get install -y libmagic1 ffmpeg
+    ```
+
+3. Install the required dependencies:
 
     ```sh
     pip install .
