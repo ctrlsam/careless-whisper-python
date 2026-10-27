@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "careless-whisper"
 version = "0.1.0"
 description = "A read receipt exploit that takes advantage of timing in end-to-end encrypted messaging applications to infer information about recipient activity"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "LICENSE"}
 authors = [
     {name = "ctrlsam"}
@@ -21,13 +21,22 @@ dependencies = [
     "uniplot", # might want to move to optional for cli
 ]
 
-[project.optional-dependencies]
+[project.scripts]
+carelesswhisper = "carelesswhisper.tools.cli.main:main"
+cw-cli = "carelesswhisper.tools.cli.main:main"
+cw-fingerprint = "carelesswhisper.tools.fingerprint.main:cli"
+cw-dos = "carelesswhisper.tools.dos.main:main"
+
+[project.urls]
+Homepage = "https://github.com/ctrlsam/careless-whisper-python"
+
+[tool.hatch.build.targets.wheel]
+packages = ["carelesswhisper"]
+
+[dependency-groups]
 dev = [
     "pytest>=7.0",
     "black",
     "flake8",
     "mypy",
 ]
-
-[project.urls]
-Homepage = "https://github.com/ctrlsam/careless-whisper-python"

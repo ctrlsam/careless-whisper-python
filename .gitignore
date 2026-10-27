@@ -175,6 +175,9 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# Local analysis exports
+exports/
+
 # pytype static type analyzer
 .pytype/
 

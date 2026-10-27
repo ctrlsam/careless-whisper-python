@@ -1,142 +1,330 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": {
-          "type": "grafana",
-          "uid": "-- Grafana --"
-        },
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
-  },
+  "annotations": {"list": []},
   "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 0,
-  "id": 0,
+  "graphTooltip": 1,
+  "id": null,
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Delivery Receipt Delay",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
+          "color": {"mode": "thresholds"},
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.4},
+              {"color": "green", "value": 0.7}
             ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 0, "y": 0},
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_analysis_confidence{phone_number=~\"$phone_number\",inference=\"overall\"}",
+          "legendFormat": "{{phone_number}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Analysis Confidence",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "bytes"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 4, "y": 0},
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_estimated_data_used_bytes{phone_number=~\"$phone_number\"}",
+          "legendFormat": "{{phone_number}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Estimated Data Used",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "percent"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 8, "y": 0},
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_estimated_battery_drain_pct_per_hour{phone_number=~\"$phone_number\"}",
+          "legendFormat": "{{bound}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Estimated Battery Drain per Hour",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {"unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 4, "x": 12, "y": 0},
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_companion_devices{phone_number=~\"$phone_number\"}",
+          "legendFormat": "{{phone_number}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Companion Devices",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {"type": "auto"},
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 0},
+      "id": 5,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {"countRows": false, "fields": "", "reducer": ["sum"], "show": false},
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_device_info{phone_number=~\"$phone_number\"}",
+          "format": "table",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "Inferred Device Profile",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {},
+            "renameByName": {}
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 70, "lineWidth": 0, "spanNulls": false}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 5},
+      "id": 6,
+      "options": {
+        "alignValue": "left",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "never",
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_phone_state{phone_number=~\"$phone_number\"} == 1",
+          "legendFormat": "{{phone_number}} {{state}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_online_status{phone_number=~\"$phone_number\"} == 1",
+          "legendFormat": "{{phone_number}} {{state}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Screen and Connectivity Timeline",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"fillOpacity": 70, "lineWidth": 0, "spanNulls": false}
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 5},
+      "id": 7,
+      "options": {
+        "alignValue": "left",
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "mergeValues": true,
+        "rowHeight": 0.9,
+        "showValue": "never",
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_app_state{phone_number=~\"$phone_number\"} == 1",
+          "legendFormat": "{{phone_number}} {{state}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Application State Timeline",
+      "type": "state-timeline"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "RTT",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
           },
           "unit": "ms"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 20,
-        "w": 23,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
+      "gridPos": {"h": 8, "w": 16, "x": 0, "y": 12},
+      "id": 8,
       "options": {
         "legend": {
-          "calcs": [],
-          "displayMode": "list",
+          "calcs": ["lastNotNull", "mean", "max"],
+          "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
+        "tooltip": {"mode": "single", "sort": "none"}
       },
-      "pluginVersion": "12.3.0",
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "builder",
-          "expr": "carelesswhisper_delivery_rtt_ms{phone_number=\"$phone_number\"}",
-          "legendFormat": "__auto",
+          "editorMode": "code",
+          "expr": "carelesswhisper_last_delivery_rtt_ms{phone_number=~\"$phone_number\"}",
+          "legendFormat": "{{phone_number}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Delivery Delay (ms)",
+      "title": "Delivery Receipt RTT",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {
+            "axisLabel": "Data rate",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "auto",
+            "spanNulls": false
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
+      "id": 9,
+      "options": {
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": true},
+        "tooltip": {"mode": "single", "sort": "none"}
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "carelesswhisper_estimated_data_rate_bytes_per_second{phone_number=~\"$phone_number\"}",
+          "legendFormat": "{{phone_number}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Estimated Data Rate",
       "type": "timeseries"
     }
   ],
-  "preload": false,
+  "refresh": "5s",
   "schemaVersion": 42,
-  "tags": [],
+  "tags": ["careless-whisper", "analysis"],
   "templating": {
     "list": [
       {
-        "current": {
-          "text": [
-            "All"
-          ],
-          "value": [
-            "$__all"
-          ]
-        },
-        "definition": "label_values(carelesswhisper_delivery_rtt_ms,phone_number)",
-        "description": "",
+        "current": {"text": ["All"], "value": ["$__all"]},
+        "definition": "label_values(carelesswhisper_analysis_confidence,phone_number)",
         "includeAll": true,
         "label": "Phone Number",
         "multi": true,
@@ -144,7 +332,7 @@
         "options": [],
         "query": {
           "qryType": 1,
-          "query": "label_values(carelesswhisper_delivery_rtt_ms,phone_number)",
+          "query": "label_values(carelesswhisper_analysis_confidence,phone_number)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 1,
@@ -153,13 +341,10 @@
       }
     ]
   },
-  "time": {
-    "from": "now-5m",
-    "to": "now"
-  },
+  "time": {"from": "now-30m", "to": "now"},
   "timepicker": {},
   "timezone": "browser",
-  "title": "Careless Whisper",
-  "uid": "ad62tmd",
-  "version": 4
+  "title": "Careless Whisper Analysis",
+  "uid": "careless-whisper",
+  "version": 1
 }

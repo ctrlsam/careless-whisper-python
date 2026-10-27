@@ -8,7 +8,6 @@ from carelesswhisper.tools.cli.ui import CLIDisplay
 from carelesswhisper.messengers.base import BaseReceiptReport
 from carelesswhisper.fingerprint import FingerprintAnalysis
 
-
 logger = getLogger(__name__)
 
 
@@ -50,15 +49,24 @@ class CLIApplication:
 
             # Start UI update loop and fingerprint tool concurrently
             try:
-                await asyncio.gather(
-                    self._run_ui_loop(),
+                ui_task = asyncio.create_task(self._run_ui_loop())
+                fingerprint_task = asyncio.create_task(
                     fingerprint_main(
                         settings=self.settings,
                         on_report=on_report,
                         on_analysis=on_analysis,
-                    ),
-                    return_exceptions=True,
+                    )
                 )
+
+                done, pending = await asyncio.wait(
+                    (ui_task, fingerprint_task),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                for task in done:
+                    task.result()
             except KeyboardInterrupt:
                 logger.info("Keyboard interrupt received")
                 self.running = False
@@ -79,7 +87,7 @@ class CLIApplication:
             with Live(
                 self.display.render_full_ui(),
                 refresh_per_second=2,
-                screen=True,
+                screen=False,
             ) as live:
                 while self.running:
                     try:
@@ -178,7 +186,8 @@ def main():
     fingerprint_parser.add_argument(
         "--exporter",
         type=str,
-        help="Exporter to use for saving results (e.g., csv)",
+        choices=["csv", "jsonl", "sqlite"],
+        help="Exporter for saving results and analysis snapshots",
     )
     fingerprint_parser.add_argument(
         "--metrics",

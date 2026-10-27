@@ -7,8 +7,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from carelesswhisper.exploit import Exploit
-from carelesswhisper.messengers.base import BaseReceiptReport
-
+from carelesswhisper.messengers.base import BaseReceiptReport, ReceiptEvent
 
 logger = getLogger(__name__)
 
@@ -95,21 +94,27 @@ class ReceiptStructure:
     receipt_ordering: str  # "Natural", "Reversed", or "Random"
     platform: str  # iOS, Android, Web, Windows, macOS
     messenger: str  # WhatsApp, Signal
+    evidence_batches: int = 0
 
 
 @dataclass
 class FingerprintAnalysis:
     """Stores the result of fingerprint analysis."""
 
+    analyzed_at: datetime
     phone_state: PhoneState
     app_state: AppState
     total_data_used_bytes: int
+    estimated_data_rate_bytes_per_second: float
+    estimated_battery_drain_pct_per_hour_min: float
+    estimated_battery_drain_pct_per_hour_max: float
     device_type: DeviceType
     avg_rtt_ms: float
     median_rtt_ms: float
     rtt_stdev_ms: float
     total_requests: int
     online_status: OnlineStatus
+    confidence_scores: dict[str, float] = field(default_factory=dict)
     receipt_structure: Optional[ReceiptStructure] = None
     companion_devices: list[dict] = field(default_factory=list)
 
@@ -138,13 +143,10 @@ class Fingerprint:
        - Standby: ~1000ms RTT (idle state)
        - Temporal tracking: Monitors 30-second background hold window
 
-    3. Device Type Identification (Section V-A, Figure 7)
-       - iPhone: Consistent RTT, low variance
-       - Samsung Exynos: Lower variance (80-150ms stdev), requires 1/min frequency
-       - Samsung Qualcomm: Moderate variance (150-300ms), works with 1/sec
-       - Xiaomi MediaTek: Higher variance (180-350ms), works with 1/sec
-       - Android Generic: Catch-all for unidentified Android devices
-       - Companion (Web/Desktop/Mobile): Multiple detection modes
+    3. Primary Device OS Identification (Section V-D, Table V)
+       - Observed delivery grouping and stacked read-receipt ordering
+       - Read order compared with known outgoing message timestamps
+       - No OS or manufacturer inference from RTT alone
 
     4. Receipt Structure (Section V-D, Table V)
        - Deterministic mapping: iOS vs Android vs Web vs Desktop
@@ -233,10 +235,10 @@ class Fingerprint:
     This implementation provides a faithful reproduction of the fingerprinting
     concepts from the research paper but makes several simplifications:
 
-    - RTT thresholds are static (paper uses adaptive learned models)
-    - Device clustering is distance-based (paper uses ML clustering)
-    - Temporal patterns use simple heuristics (paper has richer state machines)
-    - Receipt structure detection is model-based not timing-based (more accurate)
+    - Activity and companion-device estimates remain timing heuristics
+    - OS identification matches observed primary-device receipts to Table V
+    - Receipt evidence may be unavailable, ambiguous, or version-dependent
+    - Confidence scores are support indicators, not calibrated probabilities
     - Geolocation and server analysis not implemented (requires external data)
 
     For production use targeting specific platforms (WhatsApp, Signal),
@@ -266,26 +268,58 @@ class Fingerprint:
     # Requires 1 ping/min for deep sleep detection
     SAMSUNG_EXYNOS_SCREEN_OFF_RTT_MS = 2500  # Distinct pattern, higher variance
     SAMSUNG_EXYNOS_SCREEN_ON_RTT_MS = 800
-    SAMSUNG_EXYNOS_STDEV_LOW = 80  # Low jitter threshold
-    SAMSUNG_EXYNOS_STDEV_HIGH = 150
 
     # Android Samsung Qualcomm RTT Thresholds (from paper Figure 7)
     # Works with 1 ping/sec frequency
     SAMSUNG_QUALCOMM_SCREEN_OFF_RTT_MS = 1500
     SAMSUNG_QUALCOMM_SCREEN_ON_RTT_MS = 600
-    SAMSUNG_QUALCOMM_STDEV_LOW = 150
-    SAMSUNG_QUALCOMM_STDEV_HIGH = 300
 
     # Android Xiaomi MediaTek RTT Thresholds (from paper Figure 7)
     # Works with 1 ping/sec frequency
     XIAOMI_MEDIATEK_SCREEN_OFF_RTT_MS = 1800
     XIAOMI_MEDIATEK_SCREEN_ON_RTT_MS = 550
-    XIAOMI_MEDIATEK_STDEV_LOW = 180
-    XIAOMI_MEDIATEK_STDEV_HIGH = 350
 
     # Generic Android thresholds (fallback)
     ANDROID_SCREEN_OFF_RTT_MS = 1500
     ANDROID_SCREEN_ON_RTT_MS = 650
+
+    # Relative screen-state detection (paper Section V-C).
+    # The paper derives screen state from "relative differences in the observed
+    # RTTs", not absolute values: the baseline RTT depends on the attacker type
+    # (spooky stranger vs creepy companion), access technology (Wi-Fi vs LTE),
+    # and device model. Across all tested devices the screen-off RTT is roughly
+    # 2x the screen-on RTT (iPhone: ~1 s on, ~2 s off). We therefore classify a
+    # device as screen-off when the recent RTT is substantially elevated above
+    # the learned active baseline for this target, rather than comparing against
+    # a fixed millisecond threshold.
+    SCREEN_OFF_RATIO = 1.6  # recent RTT / active baseline above this -> screen off
+    MIN_SCREEN_SAMPLES = 8  # samples needed before a baseline is trustworthy
+    SCREEN_BASELINE_PERCENTILE = 0.2  # low percentile estimates the active RTT floor
+
+    # Relative app-state detection (paper Figure 5).
+    # The paper's app states (iPhone: ~350 ms foreground, ~500 ms background,
+    # ~1000 ms standby) are relative multiples of the active baseline, not fixed
+    # millisecond values. Background sits at ~1.4x foreground and standby at
+    # ~2.8x. As with screen state, the absolute RTT is dominated by network and
+    # device factors, so we classify on the recent RTT's elevation above the
+    # learned foreground baseline (the low percentile of the observed window).
+    APP_BACKGROUND_RATIO = 1.25  # recent RTT / baseline at/above this -> background
+    APP_STANDBY_RATIO = 2.1  # recent RTT / baseline at/above this -> standby
+    MIN_APP_SAMPLES = 10  # samples needed before a baseline is trustworthy
+    APP_BASELINE_PERCENTILE = 0.2  # low percentile estimates the foreground floor
+
+    @staticmethod
+    def _percentile(values: list[float], pct: float) -> float:
+        """Linear-interpolated percentile (pct in [0, 1]) of a list of values."""
+        if not values:
+            return 0.0
+        ordered = sorted(values)
+        if len(ordered) == 1:
+            return ordered[0]
+        k = (len(ordered) - 1) * pct
+        lower = int(k)
+        upper = min(lower + 1, len(ordered) - 1)
+        return ordered[lower] + (ordered[upper] - ordered[lower]) * (k - lower)
 
     async def get_phone_screen_state(
         self,
@@ -295,9 +329,16 @@ class Fingerprint:
         """
         Analyzes RTT patterns to determine if phone screen is on or off.
 
-        Based on Figure 4: Inactive screen leads to RTTs ~2s, active screen ~1s (iPhone).
-        Ping interval affects ability to detect transitions - lower frequencies
-        allow detection of deep sleep states.
+        Based on Figure 4: an inactive screen leads to RTTs ~2x those of an
+        active screen (iPhone: ~1 s on, ~2 s off). Because the absolute RTT
+        depends on network and device factors, detection is done on the
+        *relative* elevation of the recent RTT above a learned active baseline
+        (the low percentile of the observed distribution), matching the paper's
+        use of relative RTT differences rather than fixed thresholds.
+
+        Note: reliable screen detection needs low-frequency probing (the paper
+        uses ~1 ping / 20 s for iPhone) so the device can enter deep sleep;
+        high-frequency probing keeps it awake and collapses the on/off gap.
 
         Args:
             device_type: Detected or assumed device type
@@ -306,53 +347,28 @@ class Fingerprint:
         Returns:
             PhoneState indicating screen on/off status
         """
-        reports = self.exploit.get_reports()
+        window = list(self._rtt_window)
+        if not window:
+            window = [report.delay for report in self.exploit.get_reports()]
 
-        if not reports:
+        # Without enough samples we cannot establish a baseline; assume the
+        # device is active (receipts are arriving, so it is at least online).
+        if len(window) < self.MIN_SCREEN_SAMPLES:
             return PhoneState.SCREEN_ON
 
-        delays = [report.delay for report in reports]
-
-        if len(delays) < 5:
-            return PhoneState.SCREEN_ON
-
-        # Use recent measurements for current state
-        recent_delays = (
-            list(self._rtt_window)[-20:] if len(self._rtt_window) > 0 else delays[-20:]
-        )
+        recent_delays = window[-10:]
         avg_recent = mean(recent_delays)
 
-        # Device-specific thresholds
-        if device_type == DeviceType.IPHONE or "iPhone" in device_type:
-            # iPhone typically has ~1s RTT when screen is on, ~2s when off
-            threshold = (
-                self.IPHONE_SCREEN_OFF_RTT_MS + self.IPHONE_SCREEN_ON_RTT_MS
-            ) / 2
-            return (
-                PhoneState.SCREEN_OFF
-                if avg_recent > threshold
-                else PhoneState.SCREEN_ON
-            )
+        # Active (screen-on) baseline: low percentile of the observed RTTs.
+        active_baseline = self._percentile(window, self.SCREEN_BASELINE_PERCENTILE)
+        if active_baseline <= 0:
+            return PhoneState.SCREEN_ON
 
-        elif (
-            "Android" in device_type
-            or "Samsung" in device_type
-            or "Xiaomi" in device_type
-        ):
-            # Android patterns vary by model but follow similar trends
-            threshold = (
-                self.ANDROID_SCREEN_OFF_RTT_MS + self.ANDROID_SCREEN_ON_RTT_MS
-            ) / 2
-            return (
-                PhoneState.SCREEN_OFF
-                if avg_recent > threshold
-                else PhoneState.SCREEN_ON
-            )
-
-        else:
-            # Generic heuristic: high RTT variance suggests sleep state
-            variance = stdev(delays) if len(delays) > 1 else 0
-            return PhoneState.SCREEN_OFF if variance > 200 else PhoneState.SCREEN_ON
+        return (
+            PhoneState.SCREEN_OFF
+            if avg_recent >= active_baseline * self.SCREEN_OFF_RATIO
+            else PhoneState.SCREEN_ON
+        )
 
     async def get_app_state(
         self, device_type: DeviceType = DeviceType.UNKNOWN
@@ -360,63 +376,63 @@ class Fingerprint:
         """
         Detects if target application (WhatsApp/Signal) is in foreground/background.
 
-        Based on Figure 5: App state transitions show distinct RTT patterns:
-        - Foreground: ~350ms RTT (app actively processing messages)
-        - Background: ~500ms RTT (transient state for exactly 30 seconds)
-        - Standby: ~1000ms RTT (app not actively receiving)
+        Based on Figure 5, app state transitions show distinct RTT patterns that
+        are *relative* to the active baseline rather than fixed millisecond
+        values (iPhone: ~350 ms foreground, ~500 ms background, ~1000 ms
+        standby; i.e. background ~1.4x and standby ~2.8x the foreground floor).
+        Because the absolute RTT depends on the network path and device, we
+        classify on the recent RTT's elevation above a learned foreground
+        baseline (the low percentile of the observed window), matching the
+        paper's relative-difference method.
 
-        This method tracks the 30-second duration of the background state, allowing
-        detection of when an app transitions from foreground to background and back.
+        For iPhone the 30-second background hold window from Figure 5 is still
+        tracked temporally: once a device has been in the background-elevated
+        band for longer than that window, it is reported as standby.
 
         Returns:
             AppState indicating app foreground/background/standby status
         """
-        reports = self.exploit.get_reports()
+        window = list(self._rtt_window)
+        if not window:
+            window = [report.delay for report in self.exploit.get_reports()]
 
-        if not reports:
-            return AppState.APP_STANDBY
+        # Without enough samples we cannot establish a baseline; assume the
+        # app is active (receipts are arriving, so it is at least reachable).
+        if len(window) < self.MIN_APP_SAMPLES:
+            return AppState.APP_FOREGROUND
 
-        delays = [report.delay for report in reports]
-
-        if len(delays) < 10:
-            return AppState.APP_STANDBY
-
-        recent_delays = delays[-10:]
+        recent_delays = window[-10:]
         avg_recent = mean(recent_delays)
+
+        # Foreground baseline: low percentile of the observed RTTs.
+        foreground_baseline = self._percentile(window, self.APP_BASELINE_PERCENTILE)
+        if foreground_baseline <= 0:
+            return AppState.APP_FOREGROUND
+
+        ratio = avg_recent / foreground_baseline
         now = datetime.now()
 
-        # iPhone-specific detection with temporal tracking
-        if device_type == DeviceType.IPHONE or "iPhone" in device_type:
-            if avg_recent < 400:  # ~350ms threshold
-                current_state = AppState.APP_FOREGROUND
-                self._app_background_start_time = (
-                    None  # Reset timer when entering foreground
-                )
-            elif 400 <= avg_recent < 600:  # ~500ms intermediate state
-                current_state = AppState.APP_BACKGROUND
-                # Check if we're still within the 30-second background window
-                if self._app_background_start_time is None:
-                    self._app_background_start_time = now
-                background_duration = (
-                    now - self._app_background_start_time
-                ).total_seconds()
-                if background_duration > self.IPHONE_APP_BACKGROUND_DURATION_SEC:
-                    # After 30s, app transitions to standby
-                    current_state = AppState.APP_STANDBY
-                    self._app_background_start_time = None
-            else:  # ~1000ms standby
-                current_state = AppState.APP_STANDBY
-                self._app_background_start_time = None
-
-            return current_state
-
-        # Generic thresholds for other devices (without temporal tracking)
-        if avg_recent < 500:
+        if ratio < self.APP_BACKGROUND_RATIO:
+            self._app_background_start_time = None
             return AppState.APP_FOREGROUND
-        elif avg_recent < 800:
-            return AppState.APP_BACKGROUND
-        else:
+
+        if ratio >= self.APP_STANDBY_RATIO:
+            self._app_background_start_time = None
             return AppState.APP_STANDBY
+
+        # Background-elevated band. iPhone holds this state for exactly 30s
+        # (Figure 5) before dropping to standby; track that window temporally.
+        if device_type == DeviceType.IPHONE or "iPhone" in device_type:
+            if self._app_background_start_time is None:
+                self._app_background_start_time = now
+            background_duration = (
+                now - self._app_background_start_time
+            ).total_seconds()
+            if background_duration > self.IPHONE_APP_BACKGROUND_DURATION_SEC:
+                self._app_background_start_time = None
+                return AppState.APP_STANDBY
+
+        return AppState.APP_BACKGROUND
 
     async def get_online_status(self) -> OnlineStatus:
         """
@@ -442,199 +458,92 @@ class Fingerprint:
         return OnlineStatus.ONLINE if recent_reports else OnlineStatus.OFFLINE
 
     def _detect_device_type(
-        self, delays: list[float], receipt_structure: Optional[ReceiptStructure] = None
+        self, receipt_structure: Optional[ReceiptStructure]
     ) -> DeviceType:
-        """
-        Identifies device type based on RTT patterns and receipt structures.
-
-        Based on Figure 7: Different manufacturers show distinct RTT distributions.
-        Implements manufacturer-specific thresholds:
-
-        iPhone:
-        - Consistent, low jitter (~100ms stdev), ~1s screen on, ~2s screen off
-        - Recommended probe frequency: 2s for activity, 20s for screen detection
-
-        Samsung Exynos:
-        - Distinct pattern with lower stdev (80-150ms), benefits from deep sleep detection
-        - Recommended probe frequency: 1 ping/min for deep sleep state
-        - Screen on: ~800ms, Screen off: ~2500ms
-
-        Samsung Qualcomm:
-        - Higher variance (150-300ms stdev), works with faster probing
-        - Recommended probe frequency: 1 ping/sec
-        - Screen on: ~600ms, Screen off: ~1500ms
-
-        Xiaomi MediaTek:
-        - High variance (180-350ms stdev), works with faster probing
-        - Recommended probe frequency: 1 ping/sec
-        - Screen on: ~550ms, Screen off: ~1800ms
-
-        Combined with Section V-D receipt structure analysis for platform confirmation.
-        """
-        if not delays:
-            return DeviceType.UNKNOWN
-
-        avg_delay = mean(delays)
-        stdev_delay = stdev(delays) if len(delays) > 1 else 0
-        min_delay = min(delays)
-        max_delay = max(delays)
-
-        # Check receipt structure if available for platform confirmation
-        if receipt_structure:
+        if receipt_structure and receipt_structure.evidence_batches:
             if receipt_structure.platform == "iOS":
-                if receipt_structure.read_receipt_handling == "Stacked (Reversed)":
-                    return DeviceType.IPHONE
-            elif receipt_structure.platform == "Android":
-                # Distinguish Android manufacturers by RTT patterns
-                if (
-                    stdev_delay >= self.SAMSUNG_EXYNOS_STDEV_LOW
-                    and stdev_delay <= self.SAMSUNG_EXYNOS_STDEV_HIGH
-                    and 600 < avg_delay < 2500
-                ):
-                    return DeviceType.ANDROID_SAMSUNG_EXYNOS
-
-                elif (
-                    stdev_delay >= self.SAMSUNG_QUALCOMM_STDEV_LOW
-                    and stdev_delay <= self.SAMSUNG_QUALCOMM_STDEV_HIGH
-                    and 500 < avg_delay < 1600
-                ):
-                    return DeviceType.ANDROID_SAMSUNG_QUALCOMM
-
-                elif (
-                    stdev_delay >= self.XIAOMI_MEDIATEK_STDEV_LOW
-                    and stdev_delay <= self.XIAOMI_MEDIATEK_STDEV_HIGH
-                    and 400 < avg_delay < 1900
-                ):
-                    return DeviceType.ANDROID_XIAOMI_MEDIATEK
-
-        # Fallback pattern-based detection without receipt data
-        if stdev_delay < 100 and avg_delay < 600:
-            # iPhone-like: consistent, low jitter, fast response
-            return DeviceType.IPHONE
-
-        elif min_delay < 100 and max_delay > 2000:
-            # Web companion: very low RTT when active, high when inactive
-            return DeviceType.COMPANION_WEB
-
-        elif 80 <= stdev_delay <= 150 and 600 < avg_delay < 2500:
-            # Samsung Exynos: low-moderate jitter, mid-range RTT
-            return DeviceType.ANDROID_SAMSUNG_EXYNOS
-
-        elif 150 <= stdev_delay <= 300 and 500 < avg_delay < 1600:
-            # Samsung Qualcomm: moderate jitter, mid-range RTT
-            return DeviceType.ANDROID_SAMSUNG_QUALCOMM
-
-        elif 180 <= stdev_delay <= 350 and 400 < avg_delay < 1900:
-            # Xiaomi MediaTek: higher jitter, mid-range RTT
-            return DeviceType.ANDROID_XIAOMI_MEDIATEK
-
-        elif stdev_delay > 150 and 800 < avg_delay < 1500:
-            # Generic Android (insufficient data for specific manufacturer)
-            return DeviceType.ANDROID_GENERIC
-
+                return DeviceType.IPHONE
+            if receipt_structure.platform == "Android":
+                return DeviceType.ANDROID_GENERIC
         return DeviceType.UNKNOWN
 
+    def _receipt_order(self, receipt: ReceiptEvent) -> str:
+        sent = self.exploit.get_sent_messages()
+        ids = receipt.message_ids
+        # Three distinct messages is an implementation safeguard, not a
+        # threshold specified by the paper.
+        if len(ids) < 3 or len(set(ids)) != len(ids) or any(i not in sent for i in ids):
+            return "Unknown"
+        times = [sent[i].sent_at for i in ids]
+        if len(set(times)) != len(times):
+            return "Unknown"
+        if times == sorted(times):
+            return "Natural"
+        if times == sorted(times, reverse=True):
+            return "Reversed"
+        return "Random"
+
     def _detect_receipt_structure(self) -> Optional[ReceiptStructure]:
+        """Match observed primary-device receipts to Section V-D, Table V.
+
+        https://arxiv.org/html/2411.11194v4#S5.SS4
+        Linked-device receipts must never establish the phone's OS.
         """
-        Determines receipt structure based on device type and platform.
-
-        Based on Table V: Receipt handling is deterministic by platform/OS, not inferred from timing.
-        The paper shows protocol-level differences that are inherent to each OS:
-
-        WhatsApp:
-        - Android: Separate delivery, Stacked read receipts, Natural ordering
-        - iOS: Separate delivery, Stacked (Reversed) read receipts, Reversed ordering
-        - Web: Stacked delivery, Stacked read receipts, Natural ordering
-        - Windows: Stacked delivery, Stacked read receipts, Natural ordering
-        - macOS: Stacked (Reversed) delivery, Stacked (Reversed) read receipts, Reversed ordering
-
-        Signal:
-        - Android: Separate delivery, Stacked read receipts, Natural ordering
-        - iOS: Separate delivery, Stacked (Random) read receipts, Random ordering
-        - Desktop: Stacked delivery, Stacked (Reversed) read receipts, Reversed ordering
-
-        NOTE: Accurate determination requires platform identification through other means
-        (user-agent, connection patterns, etc.). This method provides deterministic mapping
-        once device type is known, rather than inferring from receipt batching behavior.
-        """
-        reports = self.exploit.get_reports()
-
-        if len(reports) < 5:
+        sent = self.exploit.get_sent_messages()
+        events = [
+            event
+            for event in self.exploit.get_receipt_events()
+            if event.device_id == 0 and any(i in sent for i in event.message_ids)
+        ]
+        if not events:
             return None
 
-        # Since we detect device type separately, use that to determine receipt structure
-        # This is more accurate than timing-based inference
-        device_type = self._detect_device_type([r.delay for r in reports])
-
-        # Determine messenger (WhatsApp by default; could be enhanced)
-        messenger = "WhatsApp"  # TODO: Detect from context if available
-
-        # Map device type to receipt structure (Table V)
-        if device_type == DeviceType.IPHONE or "iPhone" in device_type:
-            return ReceiptStructure(
-                delivery_receipt_handling="Separate",
-                read_receipt_handling="Stacked (Reversed)",
-                receipt_ordering="Reversed",
-                platform="iOS",
-                messenger=messenger,
-            )
-
-        elif (
-            device_type == DeviceType.ANDROID_SAMSUNG_EXYNOS
-            or device_type == DeviceType.ANDROID_SAMSUNG_QUALCOMM
-            or device_type == DeviceType.ANDROID_XIAOMI_MEDIATEK
-            or device_type == DeviceType.ANDROID_GENERIC
-            or "Android" in device_type
-        ):
-            return ReceiptStructure(
-                delivery_receipt_handling="Separate",
-                read_receipt_handling="Stacked",
-                receipt_ordering="Natural",
-                platform="Android",
-                messenger=messenger,
-            )
-
-        elif device_type == DeviceType.COMPANION_WEB:
-            return ReceiptStructure(
-                delivery_receipt_handling="Stacked",
-                read_receipt_handling="Stacked",
-                receipt_ordering="Natural",
-                platform="Web",
-                messenger=messenger,
-            )
-
-        elif device_type == DeviceType.COMPANION_DESKTOP:
-            return ReceiptStructure(
-                delivery_receipt_handling="Stacked",
-                read_receipt_handling="Stacked",
-                receipt_ordering="Reversed",  # Desktop platform shows reversal
-                platform="Desktop",
-                messenger=messenger,
-            )
-
-        # Fallback: try timing-based inference if device type is unknown
-        receipts_by_window: dict[int, list[BaseReceiptReport]] = {}
-        window_size_ms = 500
-
-        for report in reports:
-            window_key = int(report.delivered_at.timestamp() * 1000) // window_size_ms
-            if window_key not in receipts_by_window:
-                receipts_by_window[window_key] = []
-            receipts_by_window[window_key].append(report)
-
-        avg_receipts_per_window = (
-            mean(len(v) for v in receipts_by_window.values())
-            if receipts_by_window
-            else 0
+        deliveries = [
+            event for event in events if event.receipt_type in ("DELIVERED", "INACTIVE")
+        ]
+        reads = [event for event in events if event.receipt_type == "READ"]
+        stacked_reads = [event for event in reads if len(event.message_ids) > 1]
+        orders = {self._receipt_order(event) for event in stacked_reads}
+        ordering = (
+            next(iter(orders))
+            if len(orders) == 1
+            else ("Mixed" if orders else "Unknown")
         )
-        delivery_handling = "Stacked" if avg_receipts_per_window > 1.5 else "Separate"
+        delivery_handling = (
+            "Stacked"
+            if any(len(event.message_ids) > 1 for event in deliveries)
+            else "Separate" if deliveries else "Unknown"
+        )
+        read_handling = (
+            "Stacked" if stacked_reads else "Separate" if reads else "Unknown"
+        )
+        if stacked_reads and ordering in ("Reversed", "Random", "Mixed"):
+            read_handling = f"Stacked ({ordering})"
 
+        separately_delivered = {
+            event.message_ids[0] for event in deliveries if len(event.message_ids) == 1
+        }
+        # Require delivery evidence for the same messages as the read batch.
+        complete_batches = {
+            event.message_ids
+            for event in stacked_reads
+            if self._receipt_order(event) in ("Natural", "Reversed")
+            and set(event.message_ids) <= separately_delivered
+        }
+        platform = "Unknown"
+        if (
+            delivery_handling == "Separate"
+            and ordering in ("Natural", "Reversed")
+            and complete_batches
+        ):
+            platform = "iOS" if ordering == "Reversed" else "Android"
         return ReceiptStructure(
             delivery_receipt_handling=delivery_handling,
-            read_receipt_handling="Stacked",
-            receipt_ordering="Natural",
-            platform="Unknown",
-            messenger=messenger,
+            read_receipt_handling=read_handling,
+            receipt_ordering=ordering,
+            platform=platform,
+            messenger="WhatsApp",
+            evidence_batches=len(complete_batches) if platform != "Unknown" else 0,
         )
 
     def _analyze_companion_devices(self) -> list[dict]:
@@ -664,8 +573,7 @@ class Fingerprint:
         if len(reports) < 20:
             return []
 
-        delays = [report.delay for report in reports]
-        companion_devices = []
+        companion_devices: list[dict] = []
 
         # Cluster RTT measurements to identify distinct devices
         # Devices typically show bimodal or multimodal RTT distributions
@@ -695,9 +603,11 @@ class Fingerprint:
                     "network": "LAN",
                     "sample_count": len(very_low_rtt_reports),
                     "activity": "Active",
-                    "last_seen": very_low_rtt_reports[-1].delivered_at
-                    if very_low_rtt_reports
-                    else None,
+                    "last_seen": (
+                        very_low_rtt_reports[-1].delivered_at
+                        if very_low_rtt_reports
+                        else None
+                    ),
                 }
             )
 
@@ -723,9 +633,11 @@ class Fingerprint:
                     "network": network,
                     "sample_count": len(moderate_rtt_reports),
                     "activity": "Active",
-                    "last_seen": moderate_rtt_reports[-1].delivered_at
-                    if moderate_rtt_reports
-                    else None,
+                    "last_seen": (
+                        moderate_rtt_reports[-1].delivered_at
+                        if moderate_rtt_reports
+                        else None
+                    ),
                 }
             )
 
@@ -748,9 +660,9 @@ class Fingerprint:
                     "network": "Wi-Fi",
                     "sample_count": len(high_rtt_reports),
                     "activity": "Inactive/Background",
-                    "last_seen": high_rtt_reports[-1].delivered_at
-                    if high_rtt_reports
-                    else None,
+                    "last_seen": (
+                        high_rtt_reports[-1].delivered_at if high_rtt_reports else None
+                    ),
                 }
             )
 
@@ -768,9 +680,11 @@ class Fingerprint:
                     "network": "Unknown",
                     "sample_count": len(very_high_rtt_reports),
                     "activity": "Offline",
-                    "last_seen": very_high_rtt_reports[-1].delivered_at
-                    if very_high_rtt_reports
-                    else None,
+                    "last_seen": (
+                        very_high_rtt_reports[-1].delivered_at
+                        if very_high_rtt_reports
+                        else None
+                    ),
                 }
             )
 
@@ -778,7 +692,7 @@ class Fingerprint:
         if len(companion_devices) > 1:
             for device in companion_devices:
                 device["switching_detected"] = self._detect_device_switching(
-                    reports, device["avg_rtt_ms"], tolerance_ms=100
+                    reports, float(device["avg_rtt_ms"]), tolerance_ms=100
                 )
 
         return companion_devices
@@ -836,7 +750,7 @@ class Fingerprint:
         Implements the full fingerprinting suite from the paper:
         1. Screen state detection (Section V-C Showcase I)
         2. App activity detection (Section V-C Showcase II)
-        3. Device type identification (Section V-A, Figure 7)
+        3. Device OS identification from receipts (Section V-D, Table V)
         4. Companion device detection (Section V-C.3, Figure 8)
         5. OS/Receipt structure fingerprinting (Section V-D, Table V)
         6. Real-world tracking scenario (Section V-E)
@@ -859,34 +773,45 @@ class Fingerprint:
             Comprehensive FingerprintAnalysis with all detected characteristics
         """
         reports = self.exploit.get_reports()
+        receipt_structure = self._detect_receipt_structure()
+        device_type = self._detect_device_type(receipt_structure)
+        evidence_batches = (
+            receipt_structure.evidence_batches if receipt_structure else 0
+        )
+        # A receipt-support score, not a measured probability of OS accuracy.
+        device_confidence = evidence_batches / (evidence_batches + 1)
 
         if not reports:
             return FingerprintAnalysis(
+                analyzed_at=datetime.now(),
                 phone_state=PhoneState.SCREEN_ON,
                 app_state=AppState.APP_STANDBY,
                 total_data_used_bytes=0,
-                device_type=DeviceType.UNKNOWN,
+                estimated_data_rate_bytes_per_second=0.0,
+                estimated_battery_drain_pct_per_hour_min=0.0,
+                estimated_battery_drain_pct_per_hour_max=0.0,
+                device_type=device_type,
+                receipt_structure=receipt_structure,
                 avg_rtt_ms=0.0,
                 median_rtt_ms=0.0,
                 rtt_stdev_ms=0.0,
                 total_requests=0,
                 online_status=OnlineStatus.OFFLINE,
+                confidence_scores={
+                    "overall": 0.0,
+                    "device_type": device_confidence,
+                    "phone_state": 0.0,
+                    "app_state": 0.0,
+                    "online_status": 0.0,
+                },
             )
 
         delays = [report.delay for report in reports]
-
-        # Update rolling window
-        for delay in delays[len(self._rtt_window) :]:
-            self._rtt_window.append(delay)
 
         # Calculate RTT statistics
         avg_rtt = mean(delays)
         median_rtt = median(delays)
         rtt_stdev = stdev(delays) if len(delays) > 1 else 0.0
-
-        # Detect device type (needed for state detection thresholds)
-        receipt_structure = self._detect_receipt_structure()
-        device_type = self._detect_device_type(delays, receipt_structure)
 
         # Detect current states
         phone_state = await self.get_phone_screen_state(device_type, ping_interval_ms)
@@ -912,18 +837,47 @@ class Fingerprint:
 
         total_data_used = len(reports) * bytes_per_message
 
-        self._last_analysis_time = datetime.now()
+        ping_interval_seconds = max(ping_interval_ms / 1000, 0.001)
+        estimated_data_rate = bytes_per_message / ping_interval_seconds
+        if ping_interval_ms < 100:
+            battery_drain_min = 14.0
+            battery_drain_max = 18.0
+        else:
+            battery_drain_min = 1.0
+            battery_drain_max = 5.0
+
+        sample_confidence = min(len(reports) / 50, 1.0)
+        stability_confidence = max(
+            0.0,
+            min(1.0, 1 - (rtt_stdev / max(avg_rtt, 1.0))),
+        )
+        overall_confidence = round(
+            sample_confidence * (0.7 + (stability_confidence * 0.3)), 3
+        )
+        analyzed_at = datetime.now()
+        self._last_analysis_time = analyzed_at
 
         return FingerprintAnalysis(
+            analyzed_at=analyzed_at,
             phone_state=phone_state,
             app_state=app_state,
             total_data_used_bytes=total_data_used,
+            estimated_data_rate_bytes_per_second=estimated_data_rate,
+            estimated_battery_drain_pct_per_hour_min=battery_drain_min,
+            estimated_battery_drain_pct_per_hour_max=battery_drain_max,
             device_type=device_type,
             avg_rtt_ms=avg_rtt,
             median_rtt_ms=median_rtt,
             rtt_stdev_ms=rtt_stdev,
             total_requests=len(reports),
             online_status=online_status,
+            confidence_scores={
+                "overall": overall_confidence,
+                "device_type": device_confidence,
+                "phone_state": overall_confidence,
+                "app_state": overall_confidence,
+                "online_status": min(len(reports) / 5, 1.0),
+            },
             receipt_structure=receipt_structure,
             companion_devices=companion_devices,
         )

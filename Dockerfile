@@ -1,42 +1,39 @@
 # Build stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/app/.venv
 
-# Copy project files
-COPY pyproject.toml .
+# Install dependencies first (cached layer) using the lockfile
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project --no-dev
+
+# Copy project files and install the project itself
 COPY carelesswhisper/ ./carelesswhisper/
-COPY LICENSE .
-
-# Install dependencies
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir .
+COPY LICENSE README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 # Runtime stage
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install runtime dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy installed packages from builder
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copy application code
+# Copy the resolved virtual environment and application code
+COPY --from=builder /app/.venv /app/.venv
 COPY carelesswhisper/ ./carelesswhisper/
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    TOOL=${TOOL:-cli}
+    PATH="/app/.venv/bin:$PATH"
 
 # Create a non-root user
 RUN useradd -m -u 1000 appuser && \
@@ -44,12 +41,11 @@ RUN useradd -m -u 1000 appuser && \
 
 USER appuser
 
-# Default command - runs the selected tool via CLI
-CMD ["python", "-m", "carelesswhisper.tools.cli"]
+# Default command - runs the interactive CLI
+CMD ["carelesswhisper"]
 
 # Usage examples:
 # docker build -t careless-whisper .
-# docker run -it careless-whisper                                                    # Run CLI
-# docker run -it careless-whisper python -m carelesswhisper.tools.fingerprint        # Run fingerprint tool
-# docker run -it careless-whisper python -m carelesswhisper.tools.dos                # Run DoS tool
-# TOOL=fingerprint docker run -it -e TOOL=fingerprint careless-whisper               # Using TOOL env var
+# docker run -it careless-whisper                       # Run CLI
+# docker run -it careless-whisper cw-fingerprint --help # Run fingerprint tool
+# docker run -it careless-whisper cw-dos                # Run DoS tool

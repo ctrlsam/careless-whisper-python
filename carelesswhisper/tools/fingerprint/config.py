@@ -19,7 +19,8 @@ class Settings(BaseSettings):
         default="whatsapp", description="Messenger provider to use (e.g., whatsapp)."
     )
     exporter: str | None = Field(
-        default=None, description="Exporter to use for saving results (e.g., csv)."
+        default=None,
+        description="Exporter to use for saving results (csv, jsonl, or sqlite).",
     )
 
     metrics: bool = Field(

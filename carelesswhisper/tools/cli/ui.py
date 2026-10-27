@@ -76,7 +76,7 @@ class RTTPlotter:
         """Calculates moving average of y values."""
         if len(y) < window:
             return y
-        
+
         moving_avg = []
         for i in range(len(y)):
             start = max(0, i - window // 2)
@@ -141,7 +141,9 @@ class RTTPlotter:
                 int(((xi - min_x) / x_range) * (plot_width - 1)) if x_range > 0 else 0
             )
             y_pos = (
-                int(((avg_yi - min_y) / y_range) * (plot_height - 1)) if y_range > 0 else 0
+                int(((avg_yi - min_y) / y_range) * (plot_height - 1))
+                if y_range > 0
+                else 0
             )
 
             # Clamp to bounds
@@ -156,17 +158,17 @@ class RTTPlotter:
         for i in range(len(moving_avg_positions) - 1):
             x1, y1 = moving_avg_positions[i]
             x2, y2 = moving_avg_positions[i + 1]
-            
+
             # Bresenham-like line drawing
             steps = max(abs(x2 - x1), abs(y2 - y1))
             if steps == 0:
                 continue
-                
+
             for step in range(steps + 1):
                 t = step / steps
                 cx = int(x1 + t * (x2 - x1))
                 cy = int(y1 + t * (y2 - y1))
-                
+
                 # Only draw if not already occupied by a point
                 if plot[cy][cx] == " ":
                     plot[cy][cx] = "─"
@@ -198,7 +200,7 @@ class RTTPlotter:
         x_label_str = f"{'Time (s)':>10}{min_x:.1f}{' ' * (plot_width - 10)}{max_x:.1f}"
         lines.append(x_label_str)
         lines.append(f"{'RTT (ms)':>10}")
-        
+
         # Add legend
         lines.append(" " * 10 + "● = Data Point | ─ = Moving Average (3-pt)")
 
@@ -273,6 +275,19 @@ class FingerprintDisplay:
             table.add_row(
                 Text("Est. Data Used:", style="bold"),
                 f"{self.analysis.total_data_used_bytes / 1024:.2f} KB",
+            )
+
+            table.add_row(
+                Text("Confidence:", style="bold"),
+                f"{self.analysis.confidence_scores.get('overall', 0.0):.0%}",
+            )
+
+            table.add_row(
+                Text("Est. Battery Impact:", style="bold"),
+                (
+                    f"{self.analysis.estimated_battery_drain_pct_per_hour_min:.0f}-"
+                    f"{self.analysis.estimated_battery_drain_pct_per_hour_max:.0f}%/h"
+                ),
             )
 
             return Panel(
@@ -446,9 +461,9 @@ class CLIDisplay:
             Text("Online:", style="bold cyan"),
             Text(
                 analysis.online_status.value,
-                style="green"
-                if analysis.online_status == OnlineStatus.ONLINE
-                else "red",
+                style=(
+                    "green" if analysis.online_status == OnlineStatus.ONLINE else "red"
+                ),
             ),
         )
 
@@ -474,6 +489,16 @@ class CLIDisplay:
             Text(str(analysis.total_requests)),
             Text("Data Used:", style="bold cyan"),
             Text(f"{analysis.total_data_used_bytes / 1024:.2f} KB"),
+        )
+
+        table.add_row(
+            Text("Confidence:", style="bold cyan"),
+            Text(f"{analysis.confidence_scores.get('overall', 0.0):.0%}"),
+            Text("Battery Impact:", style="bold cyan"),
+            Text(
+                f"{analysis.estimated_battery_drain_pct_per_hour_min:.0f}-"
+                f"{analysis.estimated_battery_drain_pct_per_hour_max:.0f}%/h"
+            ),
         )
 
         return Panel(
@@ -527,9 +552,7 @@ class CLIDisplay:
                 activity_color = (
                     "green"
                     if activity == "Active"
-                    else "yellow"
-                    if activity == "Inactive"
-                    else "red"
+                    else "yellow" if activity == "Inactive" else "red"
                 )
 
                 content.append(f"  [{device_idx}] {device_type}\n", style="bold")

@@ -25,3 +25,7 @@ scrape_configs:
     honor_labels: true
     static_configs:
       - targets: ['pushgateway:9091']
+
+  - job_name: 'careless-whisper'
+    static_configs:
+      - targets: ['host.docker.internal:8000']
